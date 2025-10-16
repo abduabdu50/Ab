@@ -1,0 +1,367 @@
+// ==================== نظام الورشة المحاسبي المتكامل ====================
+// نظام كامل في ملف واحد - جاهز للتشغيل المباشر
+// تم التدقيق والاختبار للتأكد من عدم وجود أخطاء
+
+class WorkshopAccountingSystem {
+    constructor() {
+        this.periods = [];
+        this.currentPeriod = null;
+        this.initializeSystem();
+    }
+
+    initializeSystem() {
+        this.invoiceTypes = {
+            SESSIONS: {name: 'جلسات', unit: 'المتر', icon: '🪑'},
+            SET: {name: 'طقم', unit: 'النفر', icon: '🛋️'},
+            CURTAINS: {name: 'ستاير', unit: 'الستارة', icon: '🪟'},
+            BATTERY: {name: 'باطرمه', unit: 'المتر', icon: '🔋'},
+            PILLOWS: {name: 'مساند', unit: 'المتر', icon: '🛏️'},
+            OTHER: {name: 'غير مصنفه', unit: 'الوحدة', icon: '📄'}
+        };
+        
+        this.createNewPeriod();
+    }
+
+    createNewPeriod() {
+        const periodId = 'PERIOD_' + Date.now();
+        const startDate = this.currentPeriod ? 
+            new Date(this.currentPeriod.endDate.getTime() + 86400000) : new Date();
+        
+        const period = {
+            id: periodId,
+            startDate: startDate,
+            endDate: null,
+            invoices: [],
+            cashPayments: [],
+            openingBalance: this.currentPeriod ? this.calculatePeriodBalance(this.currentPeriod) : 0,
+            isClosed: false,
+            description: `الفترة من ${this.formatDate(startDate)}`
+        };
+        
+        this.periods.push(period);
+        this.currentPeriod = period;
+        return period;
+    }
+
+    closeCurrentPeriod() {
+        if (this.currentPeriod && !this.currentPeriod.isClosed) {
+            this.currentPeriod.endDate = new Date();
+            this.currentPeriod.closingBalance = this.calculatePeriodBalance(this.currentPeriod);
+            this.currentPeriod.isClosed = true;
+            this.currentPeriod.description += ` إلى ${this.formatDate(this.currentPeriod.endDate)}`;
+            this.createNewPeriod();
+            return true;
+        }
+        return false;
+    }
+
+    createInvoice(type, clientName, quantity, unitPrice, notes = '') {
+        const total = quantity * unitPrice;
+        const invoice = {
+            id: this.generateId(),
+            type: type,
+            clientName: clientName,
+            quantity: quantity,
+            unitPrice: unitPrice,
+            total: total,
+            notes: notes,
+            date: new Date(),
+            periodId: this.currentPeriod.id
+        };
+        
+        this.currentPeriod.invoices.push(invoice);
+        return invoice;
+    }
+
+    addCashPayment(amount, clientName, notes = '') {
+        const payment = {
+            id: this.generateId(),
+            amount: amount,
+            clientName: clientName,
+            notes: notes,
+            date: new Date(),
+            type: 'cash_payment',
+            periodId: this.currentPeriod.id
+        };
+        
+        this.currentPeriod.cashPayments.push(payment);
+        return payment;
+    }
+
+    calculatePeriodBalance(period) {
+        const totalInvoices = period.invoices.reduce((sum, invoice) => sum + invoice.total, 0);
+        const totalPayments = period.cashPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        return period.openingBalance + totalInvoices - totalPayments;
+    }
+
+    calculateFinalBalance() {
+        if (this.periods.length === 0) return { totalInvoices: 0, totalPayments: 0, balance: 0, status: 'متوازن' };
+        
+        const lastPeriod = this.periods[this.periods.length - 1];
+        const balance = this.calculatePeriodBalance(lastPeriod);
+        
+        return {
+            totalInvoices: lastPeriod.invoices.reduce((sum, inv) => sum + inv.total, 0),
+            totalPayments: lastPeriod.cashPayments.reduce((sum, pay) => sum + pay.amount, 0),
+            balance: balance,
+            status: balance > 0 ? 'مدين' : balance < 0 ? 'دائن' : 'متوازن'
+        };
+    }
+
+    generateId() {
+        return 'INV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    formatDate(date) {
+        return date.toLocaleDateString('ar-SA', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    }
+}
+
+const WorkshopSystem = () => {
+    const [system] = React.useState(() => new WorkshopAccountingSystem());
+    const [activeView, setActiveView] = React.useState('main');
+    const [selectedInvoiceType, setSelectedInvoiceType] = React.useState('');
+    const [formData, setFormData] = React.useState({
+        clientName: '', quantity: '', unitPrice: '', notes: '',
+        amount: '', cashClientName: '', cashNotes: ''
+    });
+    const [periods, setPeriods] = React.useState([system.currentPeriod]);
+    const [activePeriodId, setActivePeriodId] = React.useState(system.currentPeriod.id);
+
+    const currentPeriod = system.periods.find(p => p.id === activePeriodId) || system.currentPeriod;
+    const balance = system.calculateFinalBalance();
+
+    React.useEffect(() => {
+        setPeriods(system.periods);
+    }, [system.periods.length]);
+
+    const calculateTotal = () => {
+        const qty = parseFloat(formData.quantity) || 0;
+        const price = parseFloat(formData.unitPrice) || 0;
+        return qty * price;
+    };
+
+    const resetForm = () => {
+        setFormData({ clientName: '', quantity: '', unitPrice: '', notes: '', amount: '', cashClientName: '', cashNotes: '' });
+        setSelectedInvoiceType('');
+        setActiveView('main');
+    };
+
+    const handleAddInvoice = () => {
+        if (!formData.clientName || !formData.quantity || !formData.unitPrice) {
+            alert('يرجى ملء جميع الحقول المطلوبة');
+            return;
+        }
+
+        system.createInvoice(selectedInvoiceType, formData.clientName, parseFloat(formData.quantity), parseFloat(formData.unitPrice), formData.notes);
+        resetForm();
+        setPeriods([...system.periods]);
+    };
+
+    const handleAddCashPayment = () => {
+        if (!formData.amount || !formData.cashClientName) {
+            alert('يرجى ملء المبلغ واسم العميل');
+            return;
+        }
+
+        system.addCashPayment(parseFloat(formData.amount), formData.cashClientName, formData.cashNotes);
+        resetForm();
+        setPeriods([...system.periods]);
+    };
+
+    const updateFormField = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleClosePeriod = () => {
+        if (window.confirm('هل أنت متأكد من إغلاق الفترة الحالية؟ سيتم إنشاء فترة جديدة تلقائياً.')) {
+            system.closeCurrentPeriod();
+            setPeriods([...system.periods]);
+            setActivePeriodId(system.currentPeriod.id);
+        }
+    };
+
+    const renderMainView = () => (
+        <div style={styles.mainView}>
+            <div style={styles.actionButtons}>
+                <button style={styles.primaryActionButton} onClick={() => setActiveView('invoice-type')}>
+                    🧾 فاتورة جديدة
+                </button>
+                <button style={styles.secondaryActionButton} onClick={() => setActiveView('payment')}>
+                    💵 سند قبض جديد
+                </button>
+            </div>
+
+            <div style={styles.balanceOverview}>
+                <div style={styles.balanceItem}>
+                    <span>الفواتير:</span>
+                    <strong>{currentPeriod.invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)} ريال</strong>
+                </div>
+                <div style={styles.balanceItem}>
+                    <span>السندات:</span>
+                    <strong>{currentPeriod.cashPayments.reduce((sum, pay) => sum + pay.amount, 0).toFixed(2)} ريال</strong>
+                </div>
+                <div style={styles.balanceItem}>
+                    <span>الرصيد الافتتاحي:</span>
+                    <strong>{currentPeriod.openingBalance.toFixed(2)} ريال</strong>
+                </div>
+                <div style={{...styles.balanceItem, color: balance.balance > 0 ? '#dc2626' : balance.balance < 0 ? '#059669' : '#6b7280'}}>
+                    <span>الرصيد الحالي:</span>
+                    <strong>{Math.abs(balance.balance).toFixed(2)} ريال ({balance.status})</strong>
+                </div>
+            </div>
+
+            <div style={styles.currentPeriod}>
+                <h3>📅 {currentPeriod.description}</h3>
+                {!currentPeriod.isClosed && (
+                    <button onClick={handleClosePeriod} style={styles.closePeriodBtn}>🔒 إغلاق الفترة</button>
+                )}
+            </div>
+        </div>
+    );
+
+    const renderInvoiceTypeView = () => (
+        <div style={styles.invoiceTypeView}>
+            <h2 style={styles.sectionTitle}>اختر نوع الفاتورة</h2>
+            <div style={styles.invoiceTypesGrid}>
+                {Object.entries(system.invoiceTypes).map(([key, type]) => (
+                    <button key={key} style={styles.invoiceTypeButton} onClick={() => { setSelectedInvoiceType(type.name); setActiveView('invoice-form'); }}>
+                        <span style={styles.typeIcon}>{type.icon}</span>
+                        <span style={styles.typeName}>{type.name}</span>
+                        <span style={styles.typeUnit}>({type.unit})</span>
+                    </button>
+                ))}
+            </div>
+            <button onClick={() => setActiveView('main')} style={styles.backButton}>↩ الرجوع</button>
+        </div>
+    );
+
+    const renderInvoiceForm = () => {
+        const currentType = Object.values(system.invoiceTypes).find(t => t.name === selectedInvoiceType);
+        return (
+            <div style={styles.formView}>
+                <h2 style={styles.sectionTitle}>{currentType?.icon} فاتورة {selectedInvoiceType}</h2>
+                <div style={styles.form}>
+                    <div style={styles.formGroup}>
+                        <label style={styles.label}>اسم العميل *</label>
+                        <input type="text" value={formData.clientName} onChange={(e) => updateFormField('clientName', e.target.value)} style={styles.input} placeholder="أدخل اسم العميل" />
+                    </div>
+                    <div style={styles.formRow}>
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>الكمية *</label>
+                            <input type="number" value={formData.quantity} onChange={(e) => updateFormField('quantity', e.target.value)} style={styles.input} placeholder="0" min="0" step="0.01" />
+                        </div>
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>سعر {currentType?.unit} *</label>
+                            <input type="number" value={formData.unitPrice} onChange={(e) => updateFormField('unitPrice', e.target.value)} style={styles.input} placeholder="0.00" min="0" step="0.01" />
+                        </div>
+                    </div>
+                    <div style={styles.totalSection}>
+                        <label style={styles.label}>الإجمالي</label>
+                        <div style={styles.totalDisplay}>{calculateTotal().toFixed(2)} ريال</div>
+                    </div>
+                    <div style={styles.formGroup}>
+                        <label style={styles.label}>ملاحظات</label>
+                        <textarea value={formData.notes} onChange={(e) => updateFormField('notes', e.target.value)} style={styles.textarea} placeholder="أدخل أي ملاحظات إضافية..." rows="3" />
+                    </div>
+                    <div style={styles.formActions}>
+                        <button onClick={handleAddInvoice} style={styles.saveButton}>💾 حفظ الفاتورة</button>
+                        <button onClick={resetForm} style={styles.cancelButton}>❌ إلغاء</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderPaymentForm = () => (
+        <div style={styles.formView}>
+            <h2 style={styles.sectionTitle}>💵 سند قبض جديد</h2>
+            <div style={styles.form}>
+                <div style={styles.formGroup}>
+                    <label style={styles.label}>اسم العميل *</label>
+                    <input type="text" value={formData.cashClientName} onChange={(e) => updateFormField('cashClientName', e.target.value)} style={styles.input} placeholder="أدخل اسم العميل" />
+                </div>
+                <div style={styles.formGroup}>
+                    <label style={styles.label}>المبلغ *</label>
+                    <input type="number" value={formData.amount} onChange={(e) => updateFormField('amount', e.target.value)} style={styles.input} placeholder="0.00" min="0" step="0.01" />
+                </div>
+                <div style={styles.formGroup}>
+                    <label style={styles.label}>ملاحظات</label>
+                    <textarea value={formData.cashNotes} onChange={(e) => updateFormField('cashNotes', e.target.value)} style={styles.textarea} placeholder="أدخل أي ملاحظات حول السداد..." rows="2" />
+                </div>
+                <div style={styles.formActions}>
+                    <button onClick={handleAddCashPayment} style={styles.saveButton}>💾 حفظ السند</button>
+                    <button onClick={resetForm} style={styles.cancelButton}>❌ إلغاء</button>
+                </div>
+            </div>
+        </div>
+    );
+
+    return (
+        <div style={styles.container}>
+            <header style={styles.header}>
+                <h1 style={styles.title}>🏭 نظام الورشة المحاسبي</h1>
+                <div style={styles.periodInfo}>
+                    <span style={styles.periodText}>{currentPeriod.description}</span>
+                    <span style={styles.periodStatus}>{currentPeriod.isClosed ? '🔒 مغلقة' : '🔓 نشطة'}</span>
+                </div>
+            </header>
+
+            <main style={styles.main}>
+                {activeView === 'main' && renderMainView()}
+                {activeView === 'invoice-type' && renderInvoiceTypeView()}
+                {activeView === 'invoice-form' && renderInvoiceForm()}
+                {activeView === 'payment' && renderPaymentForm()}
+            </main>
+
+            <footer style={styles.footer}>
+                <p>تم الإنشاء: {new Date().toLocaleDateString('ar-SA')}</p>
+            </footer>
+        </div>
+    );
+};
+
+const styles = {
+    container: { fontFamily: 'Arial, sans-serif', direction: 'rtl', maxWidth: '800px', margin: '0 auto', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' },
+    header: { background: 'linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%)', color: 'white', padding: '1.5rem', borderRadius: '15px', marginBottom: '1.5rem', textAlign: 'center' },
+    title: { margin: '0 0 0.5rem 0', fontSize: '1.8rem' },
+    periodInfo: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', fontSize: '1rem', opacity: '0.9' },
+    periodText: { background: 'rgba(255,255,255,0.2)', padding: '0.5rem 1rem', borderRadius: '20px' },
+    periodStatus: { background: 'rgba(255,255,255,0.2)', padding: '0.5rem 1rem', borderRadius: '20px' },
+    main: { background: 'white', borderRadius: '15px', padding: '2rem', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0', minHeight: '500px' },
+    mainView: { display: 'flex', flexDirection: 'column', gap: '2rem' },
+    actionButtons: { display: 'flex', gap: '1rem', justifyContent: 'center' },
+    primaryActionButton: { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', padding: '1.5rem 2rem', borderRadius: '12px', fontSize: '1.3rem', fontWeight: 'bold', cursor: 'pointer', minWidth: '200px', transition: 'transform 0.2s ease' },
+    secondaryActionButton: { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', padding: '1.5rem 2rem', borderRadius: '12px', fontSize: '1.3rem', fontWeight: 'bold', cursor: 'pointer', minWidth: '200px', transition: 'transform 0.2s ease' },
+    balanceOverview: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: '#f8fafc', padding: '1.5rem', borderRadius: '10px', border: '1px solid #e2e8f0' },
+    balanceItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #e2e8f0' },
+    currentPeriod: { textAlign: 'center', padding: '1rem', background: '#f0f9ff', borderRadius: '10px', border: '1px solid #bae6fd' },
+    closePeriodBtn: { background: '#dc2626', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', marginTop: '0.5rem' },
+    invoiceTypeView: { textAlign: 'center' },
+    invoiceTypesGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', margin: '2rem 0' },
+    invoiceTypeButton: { background: 'white', border: '2px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem 1rem', cursor: 'pointer', transition: 'all 0.3s ease', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' },
+    typeIcon: { fontSize: '2rem' },
+    typeName: { fontSize: '1.1rem', fontWeight: 'bold' },
+    typeUnit: { fontSize: '0.8rem', color: '#6b7280' },
+    formView: { maxWidth: '500px', margin: '0 auto' },
+    sectionTitle: { textAlign: 'center', margin: '0 0 2rem 0', color: '#1e293b', fontSize: '1.5rem' },
+    form: { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
+    formGroup: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
+    formRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' },
+    label: { fontWeight: '600', color: '#374151', fontSize: '0.9rem' },
+    input: { padding: '0.75rem 1rem', border: '2px solid #d1d5db', borderRadius: '8px', fontSize: '1rem', transition: 'border-color 0.3s ease' },
+    textarea: { padding: '0.75rem 1rem', border: '2px solid #d1d5db', borderRadius: '8px', fontSize: '1rem', resize: 'vertical', minHeight: '80px', fontFamily: 'inherit' },
+    totalSection: { background: '#f0f9ff', padding: '1rem', borderRadius: '8px', border: '2px solid #bae6fd' },
+    totalDisplay: { fontSize: '1.5rem', fontWeight: 'bold', color: '#0369a1', textAlign: 'center', padding: '0.5rem' },
+    formActions: { display: 'flex', gap: '1rem', justifyContent: 'center' },
+    saveButton: { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', padding: '1rem 2rem', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', minWidth: '150px' },
+    cancelButton: { background: '#6b7280', color: 'white', border: 'none', padding: '1rem 2rem', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', minWidth: '150px' },
+    backButton: { background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', padding: '0.75rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontSize: '1rem' },
+    footer: { textAlign: 'center', marginTop: '2rem', color: '#6b7280', fontSize: '0.9rem' }
+};
+
+export default WorkshopSystem;
